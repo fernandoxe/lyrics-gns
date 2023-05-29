@@ -82,20 +82,27 @@ const saveTrack = async (track: {href: string; title: string;}, browser: Browser
 
   await page.goto(track.href, {waitUntil: 'domcontentloaded'});
 
-  const lyricsContainer = await page.locator('#lyrics-root')
-    .evaluate((element) => {
-      const lyricsDiv = document.createElement('div');
+  let lyricsContainer: string[] = [];
 
-      const lyrics = element.querySelectorAll('[data-lyrics-container]');
-      lyrics.forEach(lyric => {
-          lyricsDiv.append(lyric);
-          lyricsDiv.append(document.createElement('br'));
+  try {
+    lyricsContainer = await page.locator('#lyrics-root')
+      .evaluate((element) => {
+        const lyricsDiv = document.createElement('div');
+  
+        const lyrics = element.querySelectorAll('[data-lyrics-container]');
+        lyrics.forEach(lyric => {
+            lyricsDiv.append(lyric);
+            lyricsDiv.append(document.createElement('br'));
+        });
+        document.querySelector('body')?.append(lyricsDiv);
+        window.getSelection()?.selectAllChildren(lyricsDiv);
+        const text = window.getSelection()?.toString();
+        return text?.split('\n') || [];
       });
-      document.querySelector('body')?.append(lyricsDiv);
-      window.getSelection()?.selectAllChildren(lyricsDiv);
-      const text = window.getSelection()?.toString();
-      return text?.split('\n') || [];
-    });
+  } catch (error: any) {
+    console.log(error);
+    lyricsContainer = [error, error.message];
+  }
 
   await page.close();
 
