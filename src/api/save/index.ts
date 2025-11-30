@@ -5,28 +5,28 @@ import fs from 'fs';
 
 export const save = async (fastify: FastifyInstance, options: FastifyPluginOptions) => {
   fastify.get('/album/:id', async (request, reply) => {
-    const { id } = <any> request.params;
+    const { id } = <any>request.params;
     let albums;
-    if(!id) {
+    if (!id) {
       albums = await saveAlbums(ALBUMS);
     } else {
       albums = await saveAlbums([id]);
     }
-    reply.send({albums});
+    reply.send({ albums });
   });
 };
 
 const saveAlbums = async (albums: string[]) => {
-  const browser = await chromium.launchPersistentContext(BROWSER_DATA_PATH, { headless: true});
+  const browser = await chromium.launchPersistentContext(BROWSER_DATA_PATH, { headless: false });
 
   const savedAlbums = [];
   for (let i = 0; i < albums.length; i++) {
     const element = albums[i];
-    
+
     const album = await saveAlbum(element, browser);
 
     await saveFile(JSON.stringify(album, null, 2), `${FILES_PATH}/${ARTIST_NAME}`, `${album.title}.json`);
-    
+
     savedAlbums.push(album);
   }
 
@@ -38,8 +38,8 @@ const saveAlbums = async (albums: string[]) => {
 const saveAlbum = async (album: string, browser: BrowserContext) => {
   const page = await browser.newPage();
 
-  await page.goto(`${BASE_URL}/albums/${ARTIST_NAME}/${album}`, {waitUntil: 'domcontentloaded'});
-  
+  await page.goto(`${BASE_URL}/albums/${ARTIST_NAME}/${album}`, { waitUntil: 'domcontentloaded' });
+
   const trackList = await page.locator('album-tracklist-row a').evaluateAll((elements) => {
     return elements.map((element) => {
       return {
@@ -48,13 +48,13 @@ const saveAlbum = async (album: string, browser: BrowserContext) => {
       };
     });
   });
-  
+
   const title = await page.locator('h1').evaluate((element) => element.textContent || '');
-  
+
   await page.close();
-  
-  const tracks = trackList.map((track) => ({...track, title: normalizeTitle(track.title)}));
-  
+
+  const tracks = trackList.map((track) => ({ ...track, title: normalizeTitle(track.title) }));
+
   const savedTracks = await saveTracks(tracks, browser);
 
   const newAlbum = {
@@ -65,7 +65,7 @@ const saveAlbum = async (album: string, browser: BrowserContext) => {
   return newAlbum;
 };
 
-const saveTracks = async (tracks: {href: string; title: string;}[], browser: BrowserContext) => {
+const saveTracks = async (tracks: { href: string; title: string; }[], browser: BrowserContext) => {
   const savedTracks = [];
   for (let i = 0; i < tracks.length; i++) {
     const element = tracks[i];
@@ -77,10 +77,10 @@ const saveTracks = async (tracks: {href: string; title: string;}[], browser: Bro
   return savedTracks;
 }
 
-const saveTrack = async (track: {href: string; title: string;}, browser: BrowserContext) => {
+const saveTrack = async (track: { href: string; title: string; }, browser: BrowserContext) => {
   const page = await browser.newPage();
 
-  await page.goto(track.href, {waitUntil: 'domcontentloaded'});
+  await page.goto(track.href, { waitUntil: 'domcontentloaded' });
 
   let lyricsContainer: string[] = [];
 
@@ -88,11 +88,16 @@ const saveTrack = async (track: {href: string; title: string;}, browser: Browser
     lyricsContainer = await page.locator('#lyrics-root')
       .evaluate((element) => {
         const lyricsDiv = document.createElement('div');
-  
+
         const lyrics = element.querySelectorAll('[data-lyrics-container]');
         lyrics.forEach(lyric => {
-            lyricsDiv.append(lyric);
-            lyricsDiv.append(document.createElement('br'));
+          if (lyric.textContent?.trim() === '') return;
+
+          const lyricsHeader = lyric.querySelector('div[class*="LyricsHeader__Container"]');
+          if (lyricsHeader) lyricsHeader.remove();
+
+          lyricsDiv.append(lyric);
+          lyricsDiv.append(document.createElement('br'));
         });
         document.querySelector('body')?.append(lyricsDiv);
         window.getSelection()?.selectAllChildren(lyricsDiv);
@@ -108,20 +113,31 @@ const saveTrack = async (track: {href: string; title: string;}, browser: Browser
 
   const newTrack = {
     title: track.title,
-    lyrics: lyricsContainer,
+    lyrics: lyricsContainer.map(normalizeText),
   };
-  
+
   return newTrack;
 };
 
 export const saveFile = async (data: string, path: string, filename: string) => {
   const filepath = `${path}/${filename}`;
-  if(!fs.existsSync(path)) await fs.promises.mkdir(path, {recursive: true});
+  if (!fs.existsSync(path)) await fs.promises.mkdir(path, { recursive: true });
   await fs.promises.writeFile(filepath, data);
 };
 
 const normalizeTitle = (text: string) => {
-  return text.replace(/’/g, '\'').replace(/\n/g, '').replace(/\s+/g, ' ').trim();
+  return normalizeText(text).replace(/\n/g, '').replace(/\s+/g, ' ').trim();
+};
+
+const normalizeText = (text: string) => {
+  return text
+    .replace(/’/g, '\'')
+    .replace(/е/g, 'e')
+    .replace(/\u2005/g, ' ')
+    .replace(/\u205F/g, ' ')
+    .replace(/\u200B/g, '')
+    .replace(/\u00A0/g, ' ')
+    .trim();
 };
 
 const concatWithSeparator = (array: string[][], separator: string) => {
